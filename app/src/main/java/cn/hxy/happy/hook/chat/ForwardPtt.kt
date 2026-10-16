@@ -7,6 +7,7 @@ import com.tencent.mobileqq.aio.msg.AIOMsgItem
 import com.tencent.mobileqq.aio.msglist.holder.component.ptt.AIOPttContentComponent
 import com.tencent.mobileqq.selectmember.ResultRecord
 import com.tencent.qqnt.aio.forward.NtMsgForwardUtils
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
 import kotlinx.coroutines.delay
 import cn.hxy.happy.annotation.HookCategory
 import cn.hxy.happy.annotation.HookItemAnnotation
@@ -247,20 +248,64 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
             }
         }
 
-        // 9.3.75：转发的真正出口是内核 MsgService.forwardMsg（不再经过 AIOForwardHandler）。
-        // 语音消息在入口处被改写成文字以放行，这里在真正发出前把类型还原成语音，让内核按原消息转发语音。
-        forwardMsg?.hookBefore(this) { param ->
-            val target = lastAIOMsgItem ?: return@hookBefore
-            val msgIds = param.args.getOrNull(0) as? List<*> ?: return@hookBefore
-            val ids = msgIds.mapNotNull { it as? Long }
-            if (ids.isNotEmpty() && target.msgRecord.msgId !in ids) return@hookBefore
+        // 9.3.75：真正把消息发出去的是内核 MsgService.forwardMsg（按 msgId 取原消息内容）。
+        // 转发入口处语音已被改写成文字以放行，这里取消内核转发，改由模块按原语音元素发送，
+        // 保证接收方收到的是语音，而不是被改写成文字的那条。
+        forwardMsg?.hookReplace(this) { param ->
+            val target = lastAIOMsgItem
+            val msgIds = param.args.getOrNull(0) as? List<*>
+            val ids = msgIds?.mapNotNull { it as? Long } ?: emptyList()
+            if (target == null || (ids.isNotEmpty() && target.msgRecord.msgId !in ids)) {
+                return@hookReplace param.invokeOriginal()
+            }
 
             lastAIOMsgItem = null
             target.msgRecord.msgType = MSG_TYPE_PTT
-            LogUtils.d("转发语音 转发出口还原语音类型 msgId=${target.msgRecord.msgId} 目标数=${(param.args.getOrNull(2) as? List<*>)?.size}")
+
+            val contacts = (param.args.getOrNull(2) as? List<*>)?.mapNotNull { it as? Contact } ?: emptyList()
+            val elements = target.msgRecord.elements
+            LogUtils.d("转发语音 拦截内核转发 msgId=${target.msgRecord.msgId} 目标数=${contacts.size} 元素数=${elements?.size}")
+
+            if (contacts.isEmpty() || elements.isNullOrEmpty()) {
+                return@hookReplace param.invokeOriginal()
+            }
+
+            val callback = param.args.getOrNull(4)
+            ModuleScope.launchIO(name) {
+                contacts.forEach { contact ->
+                    runCatching { MsgTool.sendMsgTo(contact, ArrayList(elements)) }
+                        .onSuccess { LogUtils.d("转发语音 已按语音发送 chatType=${contact.chatType} peer=${contact.peerUid}") }
+                        .onFailure { LogUtils.e(name, it) }
+                    delay(500)
+                }
+                notifyForwardCallback(callback)
+            }
+            null
         }
 
         installSpies()
+    }
+
+    /** 内核转发已被模块接管，回报成功，避免分享面板一直转圈 */
+    private fun notifyForwardCallback(callback: Any?) {
+        val cb = callback ?: return
+        runCatching {
+            val method = cb.javaClass.methods.firstOrNull { it.name == "onResult" && it.parameterCount == 3 }
+                ?: return@runCatching
+            val args = arrayOfNulls<Any?>(3)
+            method.parameterTypes.forEachIndexed { index, type ->
+                args[index] = when (type) {
+                    Int::class.javaPrimitiveType, Int::class.java -> 0
+                    Long::class.javaPrimitiveType, Long::class.java -> 0L
+                    Boolean::class.javaPrimitiveType, Boolean::class.java -> false
+                    String::class.java -> ""
+                    else -> null
+                }
+            }
+            method.isAccessible = true
+            method.invoke(cb, *args)
+            LogUtils.d("转发语音 已回报转发结果")
+        }.onFailure { LogUtils.e(name, it) }
     }
 
     /** 转发出口：内核 MsgService / IKernelMsgService$CppProxy */
