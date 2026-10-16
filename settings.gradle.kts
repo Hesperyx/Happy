@@ -27,7 +27,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "QFun"
+rootProject.name = "Happy"
 include(
     ":app",
     ":annotation",

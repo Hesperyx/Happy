@@ -3,7 +3,6 @@
 import com.android.build.api.dsl.ApplicationExtension
 import java.io.FileInputStream
 import java.util.Properties
-import java.util.UUID
 
 plugins {
     alias(libs.plugins.android.application)
@@ -19,39 +18,15 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
-val modVersionCode = 26
-val modVersionName = "1.3.4"
-
-val zygiskOutputDir = layout.buildDirectory.dir("generated/zygisk-resources")
-
-val processZygiskTemplate = tasks.register<Sync>("processZygiskTemplate") {
-    description = ""
-    from(file("src/main/zygisk-template"))
-    into(zygiskOutputDir)
-    filteringCharset = "UTF-8"
-    filesMatching("module.prop") {
-        expand(
-            mapOf(
-                "version" to modVersionName,
-                "versionName" to modVersionName,
-                "versionCode" to modVersionCode,
-                "uuid" to UUID.randomUUID().toString()
-            )
-        )
-    }
-}
-
-tasks.named("preBuild").configure {
-    dependsOn(processZygiskTemplate)
-}
+val modVersionCode = 1
+val modVersionName = "1.0.0"
 
 extensions.configure<ApplicationExtension> {
-    namespace = "me.yxp.qfun"
-    ndkVersion = "30.0.16248370"
+    namespace = "cn.hxy.happy"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "me.yxp.qfun"
+        applicationId = "cn.hxy.happy"
         minSdk = 26
         targetSdk = 37
         versionCode = modVersionCode
@@ -60,22 +35,6 @@ extensions.configure<ApplicationExtension> {
         ndk {
             abiFilters.add("arm64-v8a")
             abiFilters.add("armeabi-v7a")
-        }
-
-        externalNativeBuild {
-            cmake {
-                arguments += listOf(
-                    "-DANDROID_STL=none",
-                    "-DLSPLANT_STANDALONE=ON",
-                    "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
-                )
-            }
-        }
-    }
-
-    sourceSets {
-        named("main") {
-            resources.srcDir(zygiskOutputDir.get().asFile)
         }
     }
 
@@ -94,7 +53,6 @@ extensions.configure<ApplicationExtension> {
     buildFeatures {
         buildConfig = true
         compose = true
-        prefab = true
     }
 
     buildTypes {
@@ -106,13 +64,6 @@ extensions.configure<ApplicationExtension> {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.28.0+"
         }
     }
 
@@ -136,14 +87,7 @@ extensions.configure<ApplicationExtension> {
             )
             pickFirsts += setOf(
                 "META-INF/xposed/**",
-                "META-INF/services/**",
-                "customize.sh",
-                "action.sh",
-                "uninstall.sh",
-                "module.prop",
-                "webroot/**",
-                "META-INF/com/google/android/update-binary",
-                "META-INF/com/google/android/updater-script"
+                "META-INF/services/**"
             )
         }
     }
@@ -172,7 +116,6 @@ dependencies {
     implementation(libs.kyant0.backdrop)
     implementation(libs.kyant0.shapes)
 
-    implementation(libs.dobby)
     implementation(libs.libcxx)
 
     ksp(projects.processor)
@@ -203,7 +146,7 @@ val packageName = "com.tencent.mobileqq"
 // adb shell am force-stop com.tencent.mobileqq
 val killQQ = tasks.register<Exec>("killQQ") {
     description = ""
-    group = "qfun"
+    group = "happy"
     commandLine(adb, "shell", "am", "force-stop", packageName)
     isIgnoreExitValue = true
 }

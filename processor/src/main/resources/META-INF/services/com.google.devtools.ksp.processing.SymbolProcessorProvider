@@ -1,1 +1,2 @@
-me.yxp.qfun.processor.HookProcessorProvider
+cn.hxy.happy.processor.HookProcessorProvider
+cn.hxy.happy.processor.ScriptApiProcessorProvider

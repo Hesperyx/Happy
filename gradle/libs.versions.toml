@@ -1,8 +1,7 @@
 [versions]
-agp = "9.3.3"
+agp = "9.4.1"
 annotation = "1.11.0"
 dalvikDx = "16.0.1"
-dobby = "1.2"
 kyant0-backdrop = "2.0.1"
 kyant0-shapes = "1.2.1"
 dexkit = "2.2.0"
@@ -27,7 +26,6 @@ lifecycle = "2.11.0"
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "ktx" }
 dalvik-dx = { module = "com.jakewharton.android.repackaged:dalvik-dx", version.ref = "dalvikDx" }
-dobby = { module = "io.github.vvb2060.ndk:dobby", version.ref = "dobby" }
 kyant0-backdrop = { group = "io.github.kyant0", name = "backdrop", version.ref = "kyant0-backdrop" }
 kyant0-shapes = { group = "io.github.kyant0", name = "shapes", version.ref = "kyant0-shapes" }
 kotlinpoet = { module = "com.squareup:kotlinpoet", version.ref = "kotlinpoet" }

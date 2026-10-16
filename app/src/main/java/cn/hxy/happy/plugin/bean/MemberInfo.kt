@@ -1,0 +1,13 @@
+package cn.hxy.happy.plugin.bean
+
+import com.tencent.qqnt.kernel.nativeinterface.MemberInfo
+
+data class MemberInfo(
+    @JvmField val joinGroupTime: Long,
+    @JvmField val lastActiveTime: Long,
+    @JvmField val uin: String,
+    @JvmField val uinLevel: Int,
+    @JvmField val uinName: String,
+    @JvmField val role: String,
+    @JvmField val memberInfo: MemberInfo
+)

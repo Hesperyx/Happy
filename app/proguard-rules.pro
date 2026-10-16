@@ -20,7 +20,7 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 # 保持模块自身的所有类和成员
--keep class me.yxp.qfun.** { *; }
+-keep class cn.hxy.happy.** { *; }
 
 -keep class bsh.** { *; }
 # 保持 Kotlin 函数类及其所有成员

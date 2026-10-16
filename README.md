@@ -1,23 +1,23 @@
 <div align="center">
-    <h1>QFun</h1>
+    <h1>Happy</h1>
 
-![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?style=flat-square&logo=kotlin&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=flat-square&logo=android&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=flat-square&logo=android&logoColor=white)
-![GitHub Stars](https://img.shields.io/github/stars/oneQAQone/QFun?style=social)
 
 </div>
 
 # 简介
 
 一款基于 Xposed 框架开发的 QQ/TIM 功能增强模块。
-本项目采用了 **Kotlin** + **Jetpack Compose** 的现代 Android 技术栈构建。
+本项目采用了 **Kotlin** + **Jetpack Compose** 的现代 Android 技术栈构建，并内置由大模型驱动的脚本生成 Agent。
 
 # 功能列表
 
 ### 模块功能
 仅列举部分代表性功能，更多实用功能请在模块内探索：
 - [x] 群打卡
+- [x] 红包 (自动领取 / 长按手动打开)
 - [x] 防撤回 (带提示)
 - [x] 自动续火
 - [x] 消息复读 (+1)
@@ -36,12 +36,19 @@
 > 💡 如有其他功能需求欢迎提交反馈，具备可行性的功能将被加入开发计划。
 
 ### 脚本扩展与编写
-模块内置基于 **BeanShell** 的脚本引擎，支持使用 **Java 语法** 编写脚本以动态扩展功能，可自行编写或从在线脚本库下载。
+模块内置基于 **BeanShell** 的脚本引擎，支持使用 **Java 语法** 编写脚本以动态扩展功能；也可以直接在模块内用自然语言描述需求，由内置 Agent 生成脚本。
 
 *   **事件驱动**：实时监听消息收发、群成员变动及社交交互等事件，用于触发自动化逻辑。
 *   **QQ接口**：封装基于NT架构的 QQ 操作 API 及数据获取接口，提供便捷的底层调用能力。
 *   **交互集成**：支持在消息长按菜单及脚本悬浮窗中注册自定义功能入口，增强交互体验。
 *   **动态加载**：提供运行时加载外部类库或 Java 源码的能力，实现灵活的功能热插拔。
+
+### Agent 脚本生成
+*   **OpenAI 兼容接口**：自行填写接口地址、API Key 与模型名，请求直接发往你自己的服务，模块不内置任何远端后端。
+*   **流式生成**：支持 SSE 流式返回，思考过程、正文与 token 用量实时展示，可随时中断。
+*   **工具调用**：Agent 可读写脚本目录、检索模块 API 文档，从而基于真实 API 生成可运行代码。
+*   **本地会话**：会话历史保存在本机，可切换、重命名与删除；生成结果保存前提供差异预览。
+*   **本地校验**：保存前对生成结果做结构与语法检查，避免写入无法加载的脚本。
 
 # 技术栈
 
@@ -62,6 +69,7 @@
 
 ### 🔌 动态扩展
 *   **BeanShell**: 内置轻量级 Java 脚本解释器，支持用户编写脚本动态调用模块 API，实现功能的热插拔与扩展。
+*   **内置 Agent**: 基于 OpenAI 兼容协议的自研 Agent 循环（流式解析 + 工具调用 + 产物解析），仅依赖标准库与 `org.json`，不引入额外的网络框架。
 
 # 适配与运行环境
 
@@ -83,7 +91,6 @@
 | :--- | :--- | :--- |
 | **✅ Root 环境** | **LSPosed (Zygisk/Riru)** | **强烈推荐**。支持 Scope 作用域模式，性能损耗最小，Hook 稳定性最高。 |
 | **🛡️ 免 Root 环境** | **LSPatch 及主流免 Root 框架** | **推荐**。通过修补 APK 的方式集成 Xposed 环境，适合无法解锁 Bootloader 的设备。 |
-| **⚡ Zygisk 模式** | **Zygisk** | **推荐**。无需依赖 LSPosed，通过 Zygisk 直接加载模块。⚠️ **不能与其他注入同一宿主的 LSPosed 模块同时使用**，否则可能发生 Hook 冲突、功能异常或闪退。 |
 | *其他环境* | *EdXposed / 太极 / VMOS* | *理论支持*，但属于旧一代技术或容器环境，可能存在兼容性问题，未做全面测试。 |
 
 # 反馈与日志
@@ -93,19 +100,19 @@
 2.  **模块版本**
 3.  **运行框架及版本**
 
-> **💡 提示**：`Android/data/[宿主包名]/QFun/global/log/` 目录下的 **environment_info.txt** 已自动记录了完整的运行环境信息，建议在反馈时一同提交。
+> **💡 提示**：`Android/data/[宿主包名]/Happy/global/log/` 目录下的 **environment_info.txt** 已自动记录了完整的运行环境信息，建议在反馈时一同提交。
 > 您也可以直接打包并反馈 **LSPosed 框架日志**（建议开启详细日志）。
 
 ### 1. 常规错误
 > 指功能异常、脚本报错等未导致应用闪退的情况。
 *   **文件**: `error_log.txt`
-*   **位置**: `Android/data/[宿主包名]/QFun/[当前QQ号]/log/`
+*   **位置**: `Android/data/[宿主包名]/Happy/[当前QQ号]/log/`
 
 ### 2. 应用崩溃
 > 指应用直接停止运行、闪退的情况。
 *   **文件**: `crash_[时间戳].zip`
-*   **位置**: `Android/data/[宿主包名]/QFun/[当前QQ号]/crash/`
-    *   *(注：若未登录即闪退，请检查 `.../QFun/global/crash/` 目录)*
+*   **位置**: `Android/data/[宿主包名]/Happy/[当前QQ号]/crash/`
+    *   *(注：若未登录即闪退，请检查 `.../Happy/global/crash/` 目录)*
 *   **提示**: 闪退弹窗中**点击路径文字**即可直接复制完整路径。
 
 ### ⚠️ 关于路径
@@ -117,7 +124,7 @@
 
 ### 致谢
 
-本项目借鉴了一些开源项目，特别感谢以下开源项目提供的底层支持、架构参考及代码灵感：
+本项目使用了以下开源项目，感谢其提供的底层支持与方案参考：
 
 | Open Source Project | Role & Description |
 | :--- | :--- |
@@ -126,10 +133,9 @@
 | [![Compose](https://img.shields.io/badge/Jetpack_Compose-UI_Toolkit-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white)](https://developer.android.com/jetpack/compose) | **现代化 UI 工具包**<br>构建了模块美观、流畅且支持动态主题的用户界面。 |
 | [![AndroidLiquidGlass](https://img.shields.io/badge/AndroidLiquidGlass-Liquid_Glass-E0245E?style=flat-square&logo=github)](https://github.com/Kyant0/AndroidLiquidGlass) | **液态玻璃与流体着色器**<br>提供了强大的 Compose 背景模糊、透镜折射与光影支持，并借鉴修改了其 catalog 示例中的流体胶囊导航栏实现。 |
 | [![LibXposed](https://img.shields.io/badge/LibXposed-Next_Gen_API-green?style=flat-square&logo=android)](https://github.com/libxposed/api) | **下一代 Hook 标准**<br>提供了跨框架兼容的底层 API 接口支持。 |
-| [![LSPlant](https://img.shields.io/badge/LSPlant-ART_Hook-blueviolet?style=flat-square&logo=android)](https://github.com/LSPosed/LSPlant) | **ART Hook 框架**<br>为 Zygisk 模式提供底层 Hook 与运行时支持。 |
 | [![BeanShell](https://img.shields.io/badge/BeanShell-Script_Engine-brown?style=flat-square&logo=openjdk&logoColor=white)](https://github.com/beanshell/beanshell) | **轻量级 Java 脚本引擎**<br>提供了模块内置的动态脚本执行能力，支持用户通过编写脚本灵活扩展功能。 |
-| [![QAuxiliary](https://img.shields.io/badge/QAuxiliary-Architecture-8A2BE2?style=flat-square&logo=github)](https://github.com/cinit/QAuxiliary) | **架构兼容与注入实现**<br>借鉴了 Activity 代理注入及资源加载的成熟方案以及双框架支持，并参考了其多处核心 Hook 逻辑与代码实现。 |
-| [![TCQT](https://img.shields.io/badge/TCQT-Interfaces-F7DF1E?style=flat-square&logo=github&logoColor=black)](https://github.com/callng/TCQT) | **编译时接口与逻辑参考**<br>借鉴了关键业务类的编译时接口定义，同时参考了其部分 Hook 点位分析与功能实现写法。 |
+| [![QAuxiliary](https://img.shields.io/badge/QAuxiliary-Architecture-8A2BE2?style=flat-square&logo=github)](https://github.com/cinit/QAuxiliary) | **架构兼容与注入实现**<br>借鉴了 Activity 代理注入及资源加载的成熟方案以及双框架支持思路。 |
+| [![TCQT](https://img.shields.io/badge/TCQT-Interfaces-F7DF1E?style=flat-square&logo=github&logoColor=black)](https://github.com/callng/TCQT) | **编译时接口参考**<br>借鉴了部分关键业务类的编译时接口定义。 |
 
 </div>
 
@@ -140,13 +146,6 @@
 1.  **仅供学习交流**: 本项目开发初衷仅为 Android 开发与逆向工程技术的学习、交流与研究。
 2.  **风险自担**: 使用本模块可能会违反 QQ/TIM 的用户协议，存在导致账号被冻结、封禁或功能受限的风险。**开发者不对因使用本模块造成的任何账号损失、数据丢失或其他后果负责。**
 3.  **非商业用途**: 本项目完全免费开源，禁止任何人将本项目用于商业用途或非法用途。
+4.  **Agent 与网络请求**: 脚本生成 Agent 的接口地址与密钥由使用者自行填写，请求内容由使用者自行负责；模块作者不参与、不托管任何模型服务。
 
 **如果您下载、安装或使用了本模块，即代表您已阅读并同意上述免责声明。**
-
-<br/>
-
-<div align="center">
-
-*Made with ❤️ by [oneQAQone](https://github.com/oneQAQone)*
-
-</div>

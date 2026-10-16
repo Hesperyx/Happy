@@ -1,0 +1,87 @@
+package cn.hxy.happy.loader.modern
+
+import io.github.libxposed.api.XposedInterface
+import cn.hxy.happy.loader.hookapi.Chain
+import cn.hxy.happy.loader.hookapi.HookParam
+import cn.hxy.happy.loader.hookapi.Invoker
+import java.lang.reflect.Constructor
+import java.lang.reflect.Member
+import java.lang.reflect.Method
+
+class ModernHookParam(val chain: XposedInterface.Chain) : HookParam {
+    
+    override val method: Member get() = chain.executable
+
+    override val thisObject: Any
+        get() = chain.thisObject ?: throw IllegalStateException(
+            "Cannot access 'thisObject' on static method: $method"
+        )
+
+    override var args: Array<Any?> = chain.args.toTypedArray()
+
+    var isReturnEarly = false
+        private set
+        
+    override var result: Any? = null
+        set(value) {
+            field = value
+            isReturnEarly = true
+            throwable = null
+        }
+    override var throwable: Throwable? = null
+        set(value) {
+            field = value
+            if (value != null) {
+                isReturnEarly = true
+                result = null
+            }
+        }
+}
+
+class ModernChain(private val modernParam: ModernHookParam) : Chain, HookParam by modernParam {
+    constructor(chain: XposedInterface.Chain) : this(ModernHookParam(chain))
+
+    override fun proceed(args: Array<Any?>): Any? {
+        return modernParam.chain.proceed(args)
+    }
+}
+
+class ModernInvoker(
+    private val base: XposedInterface,
+    private val method: Member
+) : Invoker {
+
+    override fun invokeOrigin(thisObject: Any?, vararg args: Any?): Any? {
+        val type = XposedInterface.Invoker.Type.ORIGIN
+        return invokeOrigin(type, thisObject, *args)
+    }
+
+    override fun invokeWithMaxPriority(
+        maxPriority: Int,
+        thisObject: Any?,
+        vararg args: Any?
+    ): Any? {
+        val type = XposedInterface.Invoker.Type.Chain(maxPriority)
+        return invokeOrigin(type, thisObject, *args)
+    }
+
+    private fun invokeOrigin(
+        type: XposedInterface.Invoker.Type,
+        thisObject: Any?,
+        vararg args: Any?
+    ): Any? {
+        return when (method) {
+            is Method -> base.getInvoker(method).setType(type).invoke(thisObject, *args)
+            is Constructor<*> -> {
+                val invoker = base.getInvoker(method).setType(type)
+                if (thisObject == null) {
+                    invoker.newInstance(*args)
+                } else {
+                    invoker.invoke(thisObject, *args)
+                }
+            }
+
+            else -> throw IllegalArgumentException("Unsupported member type: $method")
+        }
+    }
+}

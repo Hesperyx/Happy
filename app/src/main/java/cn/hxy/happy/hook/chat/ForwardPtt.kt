@@ -241,7 +241,62 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
                 forwardReplace(param)
             }
         }
+
+        installSpies()
     }
+
+    /**
+     * 临时诊断：9.3.75 的分享面板不再走 AIOForwardHandler.forward，
+     * 这里把「按类型分发 + 发送」的整条链路都打点，用日志确认真实调用点。
+     */
+    private fun installSpies() {
+        spy("com.tencent.mobileqq.sharepanel.forward.handler.atom.inner.AIOForwardApi", 1)
+        spy("com.tencent.mobileqq.sharepanel.forward.handler.atom.SeparateMsgAtomForwardApi", 1)
+        spy("com.tencent.qqnt.kernel.api.impl.MsgService", 1, listOf("forwardMsg", "sendMsg", "addSendMsg", "forwardFile", "multiForwardMsg"))
+        spy("com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService\$CppProxy", 1, listOf("native_sendMsg", "native_forwardMsg", "native_multiForwardMsg", "native_addSendMsg"))
+    }
+
+    private val spiedMethods = HashSet<String>()
+
+    private fun spy(className: String, minParams: Int, only: List<String>? = null) {
+        runCatching {
+            val clazz = className.toClass
+            var hit = 0
+            for (m in clazz.declaredMethods) {
+                if (java.lang.reflect.Modifier.isStatic(m.modifiers)) continue
+                if (m.parameterCount < minParams) continue
+                if (only != null && m.name !in only) continue
+                if (!spiedMethods.add("$className#${m.name}/${m.parameterCount}")) continue
+                m.hookBefore(this) { p ->
+                    LogUtils.d("转发语音[spy] ${clazz.simpleName}.${p.method.name}(${p.args.joinToString(", ") { argBrief(it) }})")
+                }
+                hit++
+            }
+            LogUtils.d("转发语音[spy] $className 挂载 $hit 个方法")
+        }.onFailure { LogUtils.e(this, it) }
+    }
+
+    private fun argBrief(value: Any?): String = runCatching {
+        when (value) {
+            null -> "null"
+            is String -> if (value.length > 40) "\"${value.take(40)}…\"" else "\"$value\""
+            is Collection<*> -> "List(${value.size})" + value.take(3).joinToString("") { el ->
+                val type = runCatching { el!!.javaClass.getMethod("getMsgType").invoke(el) }.getOrElse { "?" }
+                "[${el?.javaClass?.simpleName} type=$type]"
+            }
+            is Map<*, *> -> "Map(${value.size})keys=${value.keys.take(6)}"
+            else -> {
+                val cls = value.javaClass
+                val extra = runCatching {
+                    val uin = cls.getMethod("getPeerUin").invoke(value)
+                    val type = cls.getMethod("getPeerType").invoke(value)
+                    val uid = runCatching { cls.getMethod("getPeerUid").invoke(value) }.getOrNull()
+                    "peerUin=$uin peerUid=$uid peerType=$type"
+                }.getOrElse { "" }
+                if (extra.isEmpty()) cls.simpleName else "${cls.simpleName}($extra)"
+            }
+        }
+    }.getOrElse { "?" }
 
     @Suppress("UNCHECKED_CAST")
     private fun forwardReplace(param: Chain): Any? {
