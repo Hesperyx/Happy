@@ -126,11 +126,6 @@ object MsgTool : DexKitTask {
         sendMsg(makeContact(peerUin, chatType), elements)
     }
 
-    /** 直接向已有的会话 Contact 发送元素（转发语音用：目标 Contact 由内核转发参数给出） */
-    fun sendMsgTo(contact: Contact, elements: ArrayList<MsgElement>) {
-        sendMsg(contact, ArrayList(elements))
-    }
-
     fun sendMsg(contact: Contact, msg: String) {
         sendMsg(contact, processMessageContent(contact, msg))
     }

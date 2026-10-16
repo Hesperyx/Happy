@@ -30,6 +30,8 @@ import cn.hxy.happy.utils.reflect.getObjectByType
 import cn.hxy.happy.utils.reflect.newInstanceWithArgs
 import cn.hxy.happy.utils.reflect.setObject
 import cn.hxy.happy.utils.reflect.toClass
+import cn.hxy.happy.utils.reflect.Visibility
+import cn.hxy.happy.utils.reflect.callOriginal
 import org.luckypray.dexkit.query.FindClass
 import org.luckypray.dexkit.query.FindMethod
 import org.luckypray.dexkit.query.base.BaseMatcher
@@ -59,6 +61,9 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
 
     /** 9.3.75 起转发的真正出口：内核 MsgService.forwardMsg(msgIds, srcContact, dstContacts, ...) */
     private var forwardMsg: Method? = null
+
+    /** MsgTool 中 private 的「按元素发送」入口：保持其可见性不变，用反射取用 */
+    private var sendMsgElements: Method? = null
 
     /** 转发处理器可能存在的多个重载/实现，全部 hook */
     private val handleForwards = linkedSetOf<Method>()
@@ -98,8 +103,16 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
             sendIntent = resolveSendIntent()
             handleForwards += resolveForwardHandlers()
             forwardMsg = resolveForwardMsg()
+            sendMsgElements = runCatching {
+                MsgTool::class.java.findMethod {
+                    name = "sendMsg"
+                    paramTypes(Contact::class.java, ArrayList::class.java)
+                    visibility = Visibility.PRIVATE
+                }
+            }.onFailure { LogUtils.e(name, it) }.getOrNull()
 
             LogUtils.d("转发语音 sendIntentNew = ${sendIntent.declaringClass.name}#${sendIntent.name}")
+            LogUtils.d("转发语音 sendMsg(元素/private) = ${sendMsgElements?.declaringClass?.name}#${sendMsgElements?.name}")
             LogUtils.d("转发语音 forward handlers = ${handleForwards.joinToString { "${it.declaringClass.simpleName}#${it.name}" }}")
             LogUtils.d("转发语音 forwardMsg = ${forwardMsg?.let { "${it.declaringClass.name}#${it.name}" } ?: "未找到"}")
         }
@@ -273,7 +286,11 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
             val callback = param.args.getOrNull(4)
             ModuleScope.launchIO(name) {
                 contacts.forEach { contact ->
-                    runCatching { MsgTool.sendMsgTo(contact, ArrayList(elements)) }
+                    runCatching {
+                        val send = sendMsgElements
+                            ?: throw NoSuchMethodException("MsgTool.sendMsg(元素) 未解析")
+                        send.callOriginal(MsgTool, contact, ArrayList(elements))
+                    }
                         .onSuccess { LogUtils.d("转发语音 已按语音发送 chatType=${contact.chatType} peer=${contact.peerUid}") }
                         .onFailure { LogUtils.e(name, it) }
                     delay(500)
