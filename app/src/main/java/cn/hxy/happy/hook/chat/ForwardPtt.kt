@@ -56,6 +56,9 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
     private lateinit var sendIntent: Method
     private var onActivityResult: Method? = null
 
+    /** 9.3.75 起转发的真正出口：内核 MsgService.forwardMsg(msgIds, srcContact, dstContacts, ...) */
+    private var forwardMsg: Method? = null
+
     /** 转发处理器可能存在的多个重载/实现，全部 hook */
     private val handleForwards = linkedSetOf<Method>()
 
@@ -93,9 +96,11 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
 
             sendIntent = resolveSendIntent()
             handleForwards += resolveForwardHandlers()
+            forwardMsg = resolveForwardMsg()
 
             LogUtils.d("转发语音 sendIntentNew = ${sendIntent.declaringClass.name}#${sendIntent.name}")
             LogUtils.d("转发语音 forward handlers = ${handleForwards.joinToString { "${it.declaringClass.simpleName}#${it.name}" }}")
+            LogUtils.d("转发语音 forwardMsg = ${forwardMsg?.let { "${it.declaringClass.name}#${it.name}" } ?: "未找到"}")
         }
 
         return super.onInit()
@@ -242,7 +247,44 @@ object ForwardPtt : BaseSwitchHookItem(), DexKitTask {
             }
         }
 
+        // 9.3.75：转发的真正出口是内核 MsgService.forwardMsg（不再经过 AIOForwardHandler）。
+        // 语音消息在入口处被改写成文字以放行，这里在真正发出前把类型还原成语音，让内核按原消息转发语音。
+        forwardMsg?.hookBefore(this) { param ->
+            val target = lastAIOMsgItem ?: return@hookBefore
+            val msgIds = param.args.getOrNull(0) as? List<*> ?: return@hookBefore
+            val ids = msgIds.mapNotNull { it as? Long }
+            if (ids.isNotEmpty() && target.msgRecord.msgId !in ids) return@hookBefore
+
+            lastAIOMsgItem = null
+            target.msgRecord.msgType = MSG_TYPE_PTT
+            LogUtils.d("转发语音 转发出口还原语音类型 msgId=${target.msgRecord.msgId} 目标数=${(param.args.getOrNull(2) as? List<*>)?.size}")
+        }
+
         installSpies()
+    }
+
+    /** 转发出口：内核 MsgService / IKernelMsgService$CppProxy */
+    private fun resolveForwardMsg(): Method? {
+        val candidates = listOf(
+            "com.tencent.qqnt.kernel.api.impl.MsgService",
+            "com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService\$CppProxy",
+            "com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService"
+        )
+        for (className in candidates) {
+            val m = runCatching {
+                className.toClass.findMethodOrNull {
+                    name = "forwardMsg"
+                    paramCount = 5
+                }
+            }.getOrNull()
+            if (m != null) return m
+        }
+        return runCatching {
+            "com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService\$CppProxy".toClass.findMethodOrNull {
+                name = "native_forwardMsg"
+                paramCount = 6
+            }
+        }.getOrNull()
     }
 
     /**
