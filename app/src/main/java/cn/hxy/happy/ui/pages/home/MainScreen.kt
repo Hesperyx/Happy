@@ -172,9 +172,9 @@ fun MainScreen(
     val headerColor = if (hasBackdrop) Color.White else colors.textPrimary
     val headerSubColor = if (hasBackdrop) Color.White.copy(alpha = 0.86f) else colors.textSecondary
     val onCardPrimary = if (hasBackdrop) CARD_TEXT else colors.textPrimary
-    val onCardSecondary = if (hasBackdrop) CARD_TEXT.copy(alpha = 0.66f) else colors.textSecondary
+    val onCardSecondary = if (hasBackdrop) CARD_TEXT.copy(alpha = 0.78f) else colors.textSecondary
     val textShadow = if (hasBackdrop) {
-        TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 2f), 10f))
+        TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.65f), Offset(0f, 3f), 14f))
     } else {
         TextStyle.Default
     }
@@ -205,10 +205,11 @@ fun MainScreen(
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                0.0f to Color.Black.copy(alpha = 0.50f),
-                                0.30f to Color.Black.copy(alpha = 0.20f),
-                                0.70f to Color.Black.copy(alpha = 0.22f),
-                                1.0f to Color.Black.copy(alpha = 0.46f)
+                                0.0f to Color.Black.copy(alpha = 0.58f),
+                                0.22f to Color.Black.copy(alpha = 0.28f),
+                                0.45f to Color.Black.copy(alpha = 0.10f),
+                                0.72f to Color.Black.copy(alpha = 0.16f),
+                                1.0f to Color.Black.copy(alpha = 0.40f)
                             )
                         )
                 )
@@ -529,12 +530,12 @@ private fun GlassCard(
             .drawBackdrop(
                 backdrop = glass,
                 shape = { shape },
-                effects = { blur(26f) },
+                effects = { blur(10f) },
                 highlight = null,
                 shadow = null
             )
-            .background(Color.White.copy(alpha = 0.55f))
-            .border(1.dp, Color.White.copy(alpha = 0.62f), shape)
+            .background(Color.White.copy(alpha = 0.70f))
+            .border(1.dp, Color.White.copy(alpha = 0.82f), shape)
     } else {
         cardModifier
             .shadow(2.dp, shape, clip = false)
@@ -566,12 +567,12 @@ private fun RefreshChip(
             .drawBackdrop(
                 backdrop = glass,
                 shape = { shape },
-                effects = { blur(20f) },
+                effects = { blur(8f) },
                 highlight = null,
                 shadow = null
             )
-            .background(Color.White.copy(alpha = if (state == ChipState.Disabled) 0.42f else 0.58f))
-            .border(1.dp, Color.White.copy(alpha = 0.66f), shape)
+            .background(Color.White.copy(alpha = if (state == ChipState.Disabled) 0.55f else 0.72f))
+            .border(1.dp, Color.White.copy(alpha = 0.84f), shape)
     } else {
         chipModifier.background(
             if (state == ChipState.Disabled) colors.ripple.copy(alpha = 0.55f) else colors.ripple,
