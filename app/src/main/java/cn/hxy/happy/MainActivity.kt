@@ -17,8 +17,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
+import cn.hxy.happy.conf.BackdropApiConfig
+import cn.hxy.happy.ui.components.dialogs.CenterDialog
 import cn.hxy.happy.ui.components.dialogs.ConfirmDialog
 import cn.hxy.happy.ui.core.theme.HappyTheme
+import cn.hxy.happy.ui.pages.configs.BackdropApiPage
+import cn.hxy.happy.ui.pages.home.BackdropApiStore
 import cn.hxy.happy.ui.pages.home.MainScreen
 import cn.hxy.happy.utils.hook.hookstatus.HookStatus
 import cn.hxy.happy.utils.qq.HostInfo
@@ -30,6 +34,8 @@ class MainActivity : ComponentActivity() {
     private var frameworkInfo by mutableStateOf("")
     private var isIconVisible by mutableStateOf(true)
     private var showHideConfirmDialog by mutableStateOf(false)
+    private var backdropConfig by mutableStateOf(BackdropApiConfig.default())
+    private var showBackdropConfigPage by mutableStateOf(false)
 
     private val launcherComponent by lazy { ComponentName(this, LauncherActivity::class.java) }
 
@@ -40,6 +46,7 @@ class MainActivity : ComponentActivity() {
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
         HookStatus.init(this)
+        backdropConfig = BackdropApiStore.load(this)
 
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -58,8 +65,24 @@ class MainActivity : ComponentActivity() {
                     isActivated,
                     frameworkInfo,
                     isIconVisible,
-                    ::handleToggleIcon
+                    backdropConfig,
+                    ::handleToggleIcon,
+                    { showBackdropConfigPage = true }
                 )
+
+                CenterDialog(
+                    visible = showBackdropConfigPage,
+                    onDismiss = { showBackdropConfigPage = false }
+                ) {
+                    BackdropApiPage(
+                        currentConfig = backdropConfig,
+                        onSave = { config ->
+                            backdropConfig = config
+                            BackdropApiStore.save(this, config)
+                        },
+                        onDismiss = { showBackdropConfigPage = false }
+                    )
+                }
 
                 ConfirmDialog(
                     showHideConfirmDialog,

@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import cn.hxy.happy.R
+import cn.hxy.happy.conf.BackdropApiConfig
 import cn.hxy.happy.ui.components.atoms.HappyCard
 import cn.hxy.happy.ui.core.theme.AccentGreen
 import cn.hxy.happy.ui.core.theme.AccentRed
@@ -63,7 +64,9 @@ fun MainScreen(
     isActivated: Boolean,
     frameworkInfo: String,
     isIconVisible: Boolean,
+    backdropConfig: BackdropApiConfig,
     onToggleIcon: () -> Unit,
+    onOpenBackdropConfig: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = HappyTheme.colors
@@ -73,14 +76,25 @@ fun MainScreen(
     var isLoadingBackdrop by remember { mutableStateOf(true) }
     var backdrop by remember { mutableStateOf<ImageBitmap?>(null) }
 
-    LaunchedEffect(refreshKey) {
+    // 接口表一变就重新取图；接口全关时退回纯色底
+    LaunchedEffect(refreshKey, backdropConfig) {
         isLoadingBackdrop = true
-        val loaded = BackdropLoader.load(context, forceRefresh = refreshKey > 0)?.asImageBitmap()
-        if (loaded != null) backdrop = loaded
+        val loaded = BackdropLoader.load(context, backdropConfig.apis, refreshKey > 0)
+        if (loaded != null) {
+            backdrop = loaded.asImageBitmap()
+        } else if (backdropConfig.enabledApis.isEmpty()) {
+            backdrop = null
+        }
         isLoadingBackdrop = false
     }
 
     val hasBackdrop = backdrop != null
+
+    val apiSummary = when {
+        backdropConfig.apis.isEmpty() -> "没有接口，主页不取图"
+        backdropConfig.enabledApis.isEmpty() -> "${backdropConfig.apis.size} 个接口 · 全部关闭"
+        else -> "${backdropConfig.apis.size} 个接口 · ${backdropConfig.enabledApis.size} 个在用"
+    }
 
     // 有背景图时状态栏落在暗色遮罩上，图标转白；无图时白底配深色图标
     val view = LocalView.current
@@ -218,6 +232,38 @@ fun MainScreen(
                     Text(
                         text = if (isIconVisible) "桌面显示中" else "桌面已隐藏",
                         fontSize = 13.sp,
+                        color = colors.textSecondary
+                    )
+                }
+            }
+
+            HappyCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenBackdropConfig
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "背景接口",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.textPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = apiSummary,
+                            fontSize = 12.sp,
+                            color = colors.textSecondary
+                        )
+                    }
+                    Text(
+                        text = "›",
+                        fontSize = 20.sp,
                         color = colors.textSecondary
                     )
                 }
