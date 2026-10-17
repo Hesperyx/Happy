@@ -42,7 +42,7 @@ import java.lang.reflect.Method
 @HookItemAnnotation(
     "液态玻璃导航栏",
     "用 Compose 液态玻璃导航栏替换 QQ 原生底部导航栏",
-    HookCategory.OTHER
+    HookCategory.BEAUTY
 )
 object LiquidGlassTabBar : BaseSwitchHookItem(), DexKitTask {
 

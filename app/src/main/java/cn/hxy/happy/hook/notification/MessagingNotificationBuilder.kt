@@ -188,8 +188,10 @@ internal class MessagingNotificationBuilder(
     }
 
     private fun iconFromNotification(notification: Notification): IconCompat? {
+        // 注意：Notification.largeIcon 是公开的 Bitmap 字段（已废弃），会遮蔽 getLargeIcon()，
+        // 必须显式调 getter 才能拿到 Icon。
         return runCatching {
-            notification.largeIcon?.let { IconCompat.createFromIcon(context, it) }
+            notification.getLargeIcon()?.let { IconCompat.createFromIcon(context, it) }
         }.getOrNull()
     }
 
