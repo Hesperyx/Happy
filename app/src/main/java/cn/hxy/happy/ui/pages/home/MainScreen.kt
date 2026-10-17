@@ -1,7 +1,10 @@
 package cn.hxy.happy.ui.pages.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,13 +18,30 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -43,103 +63,176 @@ fun MainScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = HappyTheme.colors
+    val context = LocalContext.current
 
-    Column(
+    var refreshKey by remember { mutableIntStateOf(0) }
+    var isLoadingBackdrop by remember { mutableStateOf(true) }
+    var backdrop by remember { mutableStateOf<ImageBitmap?>(null) }
+
+    LaunchedEffect(refreshKey) {
+        isLoadingBackdrop = true
+        val loaded = BackdropLoader.load(context, forceRefresh = refreshKey > 0)?.asImageBitmap()
+        if (loaded != null) backdrop = loaded
+        isLoadingBackdrop = false
+    }
+
+    val hasBackdrop = backdrop != null
+    val textColor = if (hasBackdrop) Color.White else colors.textPrimary
+    val subTextColor = if (hasBackdrop) Color.White.copy(alpha = 0.86f) else colors.textSecondary
+    val textShadow = if (hasBackdrop) {
+        TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.55f), Offset(0f, 2f), 10f))
+    } else {
+        TextStyle.Default
+    }
+
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(colors.background)
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        HappyCard(modifier = Modifier.fillMaxWidth()) {
-            Column(
+        if (backdrop != null) {
+            Image(
+                bitmap = backdrop!!,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to Color.Black.copy(alpha = 0.44f),
+                            0.30f to Color.Black.copy(alpha = 0.08f),
+                            0.72f to Color.Black.copy(alpha = 0.08f),
+                            1.0f to Color.Black.copy(alpha = 0.46f)
+                        )
+                    )
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column {
+                    Text(
+                        text = "Happy",
+                        fontSize = 30.sp,
+                        lineHeight = 34.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor,
+                        style = textShadow
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "$versionName ($versionCode)",
+                        fontSize = 13.sp,
+                        color = subTextColor,
+                        style = textShadow
+                    )
+                }
+                RefreshChip(
+                    hasBackdrop = hasBackdrop,
+                    isLoading = isLoadingBackdrop,
+                    onRefresh = { refreshKey++ }
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(
+                        if (isActivated) R.drawable.ic_logo_check else R.drawable.ic_logo_unchecked
+                    ),
+                    contentDescription = null,
+                    modifier = Modifier.size(44.dp),
+                    tint = if (isActivated) AccentGreen else AccentRed
+                )
+                Spacer(modifier = Modifier.width(14.dp))
+                Column {
+                    Text(
+                        text = if (isActivated) "已激活" else "未激活",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = textColor,
+                        style = textShadow
+                    )
+                    if (frameworkInfo.isNotBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = frameworkInfo,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = subTextColor,
+                            style = textShadow,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            HappyCard(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onToggleIcon
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text(
-                            text = "Happy",
-                            fontSize = 30.sp,
-                            lineHeight = 34.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "$versionName ($versionCode)",
-                            fontSize = 13.sp,
-                            color = colors.textSecondary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        painter = painterResource(
-                            if (isActivated) R.drawable.ic_logo_check else R.drawable.ic_logo_unchecked
-                        ),
-                        contentDescription = null,
-                        modifier = Modifier.size(40.dp),
-                        tint = if (isActivated) AccentGreen else AccentRed
+                    Text(
+                        text = if (isIconVisible) "隐藏图标" else "显示图标",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.textPrimary
                     )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = if (isActivated) "已激活" else "未激活",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.textPrimary
-                        )
-                        if (frameworkInfo.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = frameworkInfo,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp,
-                                color = colors.textSecondary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+                    Text(
+                        text = if (isIconVisible) "桌面显示中" else "桌面已隐藏",
+                        fontSize = 13.sp,
+                        color = colors.textSecondary
+                    )
                 }
             }
         }
+    }
+}
 
-        HappyCard(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = onToggleIcon
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (isIconVisible) "隐藏图标" else "显示图标",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.textPrimary
-                )
-                Text(
-                    text = if (isIconVisible) "桌面显示中" else "桌面已隐藏",
-                    fontSize = 13.sp,
-                    color = colors.textSecondary
-                )
-            }
-        }
+@Composable
+private fun RefreshChip(
+    hasBackdrop: Boolean,
+    isLoading: Boolean,
+    onRefresh: () -> Unit
+) {
+    val colors = HappyTheme.colors
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(
+                if (hasBackdrop) Color.Black.copy(alpha = 0.34f) else colors.ripple
+            )
+            .clickable(enabled = !isLoading, onClick = onRefresh)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+    ) {
+        Text(
+            text = if (isLoading) "加载中" else "换一张",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (hasBackdrop) Color.White else colors.textPrimary
+        )
     }
 }
