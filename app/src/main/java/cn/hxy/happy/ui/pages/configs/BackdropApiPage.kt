@@ -104,10 +104,10 @@ fun BackdropApiPage(
                     append(hit.bytes / 1024)
                     append(" KB · ")
                     append(
-                        if (hit.cover <= 1.05f) {
-                            "原生像素"
-                        } else {
-                            "要放大 ${(kotlin.math.round(hit.cover * 10f) / 10f)}×"
+                        when {
+                            !hit.native -> "太大，降过采样"
+                            hit.cover <= 1.05f -> "原生像素"
+                            else -> "要放大 ${(kotlin.math.round(hit.cover * 10f) / 10f)}×"
                         }
                     )
                 }
@@ -197,7 +197,7 @@ fun BackdropApiPage(
                 lineHeight = 16.sp,
                 color = when {
                     probeFailed -> AccentRed
-                    (probe?.cover ?: 0f) > 1.15f -> AccentOrange
+                    probe?.let { !it.native || it.cover > 1.15f } == true -> AccentOrange
                     else -> colors.textSecondary
                 },
                 modifier = Modifier.weight(1f)

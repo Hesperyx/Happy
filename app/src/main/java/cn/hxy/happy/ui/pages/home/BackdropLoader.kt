@@ -16,6 +16,7 @@ import java.net.URL
  * 「试一张」真的抓到图才算成功。
  *
  * [cover] 是为了铺满屏幕要把这张图放大多少倍：<= 1 表示原生像素就够，> 1 越大越糊。
+ * [native] 表示这次是按 1:1 原始像素解出来的，没有经过任何降采样。
  */
 internal data class BackdropProbe(
     val api: BackdropApi,
@@ -23,19 +24,23 @@ internal data class BackdropProbe(
     val bytes: Int,
     val sourceWidth: Int,
     val sourceHeight: Int,
-    val cover: Float
+    val cover: Float,
+    val native: Boolean
 )
 
 /**
  * 主页背景图：按接口表里启用的地址随机取一张，落盘缓存，失败时退回旧缓存。
  *
- * 糊不糊只取决于两件事：源图像素够不够铺满屏幕、解码时有没有被缩小。
- * 所以这里按「放大倍数」挑图，并且只解出铺满屏幕需要的那一块，不做整图缩边。
+ * 原则：**不缩放**。解码只做一件事——把源图里能铺满屏幕的那一块按 1:1 抠出来，
+ * 剩下的交给 GPU。宁可不显示一张图，也不用缩小后的像素去糊满屏幕。
  */
 internal object BackdropLoader {
 
-    /** 解出的位图最多这么多像素，别把内存顶穿（10M px ≈ 40 MB）。 */
-    private const val MAX_PIXELS = 10_000_000L
+    /**
+     * 1:1 解码能接受的最大像素数（14M px ≈ 56 MB）。
+     * 超过它说明这张图大到解不动，直接换下一条接口，而不是把它缩小了用。
+     */
+    private const val NATIVE_BUDGET = 14_000_000L
 
     /** 放大倍数不超过它就算清晰，遇到这种图就不必再试别的接口。 */
     private const val SHARP_COVER = 1.15f
@@ -86,8 +91,7 @@ internal object BackdropLoader {
             val bytes = runCatching { fetch(api.url) }.getOrNull() ?: return@forEach
             val cover = coverScale(bytes, width, height)
             if (cover <= SHARP_COVER) {
-                val bitmap = runCatching { decodeForScreen(bytes, width, height) }.getOrNull()
-                    ?: return@forEach
+                val bitmap = decodeNative(bytes, width, height) ?: return@forEach
                 writeCache(file, bytes)
                 cacheInMemory(key, bitmap)
                 return@withContext bitmap
@@ -99,7 +103,9 @@ internal object BackdropLoader {
         }
 
         fallback?.let { bytes ->
-            runCatching { decodeForScreen(bytes, width, height) }.getOrNull()?.let { bitmap ->
+            // 兜底也是 1:1；只有 1:1 解不动时才允许降采样，否则宁可换接口
+            val bitmap = decodeNative(bytes, width, height) ?: decodeScaled(bytes, width, height)
+            if (bitmap != null) {
                 writeCache(file, bytes)
                 cacheInMemory(key, bitmap)
                 return@withContext bitmap
@@ -126,14 +132,16 @@ internal object BackdropLoader {
             val height = targetHeight.coerceAtLeast(1)
             val bytes = fetch(api.url)
             val (sourceWidth, sourceHeight) = boundsOf(bytes) ?: error("返回的内容不是图片")
-            val bitmap = decodeForScreen(bytes, width, height) ?: error("这张图解不出来")
+            val native = decodeNative(bytes, width, height)
+            val bitmap = native ?: decodeScaled(bytes, width, height) ?: error("这张图解不出来")
             BackdropProbe(
                 api = api,
                 bitmap = bitmap,
                 bytes = bytes.size,
                 sourceWidth = sourceWidth,
                 sourceHeight = sourceHeight,
-                cover = coverScale(sourceWidth, sourceHeight, width, height)
+                cover = coverScale(sourceWidth, sourceHeight, width, height),
+                native = native != null
             )
         }
     }
@@ -184,33 +192,56 @@ internal object BackdropLoader {
     private fun decodeFile(file: File, targetWidth: Int, targetHeight: Int): Bitmap? {
         if (!file.isFile || file.length() == 0L) return null
         val bytes = runCatching { file.readBytes() }.getOrNull() ?: return null
-        return decodeForScreen(bytes, targetWidth, targetHeight)
+        return decodeNative(bytes, targetWidth, targetHeight)
+            ?: decodeScaled(bytes, targetWidth, targetHeight)
     }
 
     /**
-     * 只解出「铺满屏幕」需要的那一块：按屏幕比例居中裁剪，再按内存上限降采样。
-     * 屏幕 1272×2800 的机器上，一张 3000×1600 的横图以前会被压到 960×540 再拉大，
-     * 现在直接解中间 1272×2800 比例的那条，尺寸一点不少。
+     * 1:1 解码：只把源图里「铺满屏幕需要的那一条」抠出来，尺寸一点不减。
+     * 屏幕 1272×2800 上铺一张 7408×4012 的横图，抠出的是 1822×4012 原始像素，
+     * 显示时是缩小（0.70×），不是放大，所以清晰。
      */
-    private fun decodeForScreen(bytes: ByteArray, targetWidth: Int, targetHeight: Int): Bitmap? {
+    private fun decodeNative(bytes: ByteArray, targetWidth: Int, targetHeight: Int): Bitmap? {
         val (sourceWidth, sourceHeight) = boundsOf(bytes) ?: return null
+        val region = coverRegion(sourceWidth, sourceHeight, targetWidth, targetHeight)
+        if (region.width().toLong() * region.height() > NATIVE_BUDGET) return null
+        regionDecode(bytes, region, 1)?.let { return it }
+        // 有些编码（例如无损 WebP）不支持区域解码：整图 1:1 也还在预算内就整图来
+        if (sourceWidth.toLong() * sourceHeight > NATIVE_BUDGET) return null
+        return plainDecode(bytes, 1)
+    }
+
+    /** 只有 1:1 超出内存预算时才走这条路，属于最后的兜底。 */
+    private fun decodeScaled(bytes: ByteArray, targetWidth: Int, targetHeight: Int): Bitmap? {
+        val (sourceWidth, sourceHeight) = boundsOf(bytes) ?: return null
+        val region = coverRegion(sourceWidth, sourceHeight, targetWidth, targetHeight)
+        val sample = biggestSampleWithin(region.width(), region.height())
+        regionDecode(bytes, region, sample)?.let { return it }
+        return plainDecode(bytes, biggestSampleWithin(sourceWidth, sourceHeight))
+    }
+
+    /** 按屏幕比例，在源图里居中取一块面积最大的可铺满区域。 */
+    private fun coverRegion(
+        sourceWidth: Int,
+        sourceHeight: Int,
+        targetWidth: Int,
+        targetHeight: Int
+    ): Rect {
         val targetRatio = targetWidth.toFloat() / targetHeight
-        val region = if (sourceWidth.toFloat() / sourceHeight > targetRatio) {
+        return if (sourceWidth.toFloat() / sourceHeight > targetRatio) {
             val cropWidth = (sourceHeight * targetRatio).toInt().coerceIn(1, sourceWidth)
             Rect((sourceWidth - cropWidth) / 2, 0, (sourceWidth + cropWidth) / 2, sourceHeight)
         } else {
             val cropHeight = (sourceWidth / targetRatio).toInt().coerceIn(1, sourceHeight)
             Rect(0, (sourceHeight - cropHeight) / 2, sourceWidth, (sourceHeight + cropHeight) / 2)
         }
-        val sampleSize = sampleSize(region.width(), region.height())
-        regionDecode(bytes, region, sampleSize)?.let { return it }
-        // 少数编码（例如无损 WebP）不支持区域解码，退回整图解码——此时按整图算降采样
-        return plainDecode(bytes, sampleSize(sourceWidth, sourceHeight))
     }
 
-    private fun sampleSize(width: Int, height: Int): Int {
+    private fun biggestSampleWithin(width: Int, height: Int): Int {
         var sample = 1
-        while (width.toLong() / sample * (height.toLong() / sample) > MAX_PIXELS && sample < 16) {
+        while (
+            width.toLong() / sample * (height.toLong() / sample) > NATIVE_BUDGET && sample < 16
+        ) {
             sample *= 2
         }
         return sample
