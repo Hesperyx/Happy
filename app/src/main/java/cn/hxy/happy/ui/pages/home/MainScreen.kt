@@ -1,10 +1,12 @@
 package cn.hxy.happy.ui.pages.home
 
 import android.app.Activity
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,6 +79,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
+import kotlin.math.roundToInt
 
 /** 主页卡片的圆角，磨砂卡和无图时的白卡共用。 */
 private val CARD_SHAPE: Shape = RoundedCornerShape(24.dp)
@@ -146,6 +150,10 @@ fun MainScreen(
         }
         quoteLoading = false
     }
+
+    // ---------- 玻璃观感（快捷操作里的「玻璃观感」卡可调）----------
+    var look by remember { mutableStateOf(HomeLook.load(context)) }
+    var showLookSheet by remember { mutableStateOf(false) }
 
     val hasBackdrop = backdrop != null
     // 只有叠在图上时才真的画磨砂；无图时同一套卡片退回普通白卡
@@ -256,6 +264,8 @@ fun MainScreen(
                         else -> ChipState.Idle
                     },
                     glass = glass,
+                    alpha = look.alpha,
+                    blurPx = look.blur,
                     onClick = {
                         // 没开任何接口时按钮是禁用态，这里只是兜底
                         if (backdropConfig.enabledApis.isNotEmpty()) refreshKey++
@@ -266,7 +276,7 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             // 状态卡
-            GlassCard(glass = glass) {
+            GlassCard(glass = glass, alpha = look.alpha, blurPx = look.blur) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -314,7 +324,7 @@ fun MainScreen(
             }
 
             // 一言卡
-            GlassCard(glass = glass) {
+            GlassCard(glass = glass, alpha = look.alpha, blurPx = look.blur) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -385,7 +395,7 @@ fun MainScreen(
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp)
             )
 
-            GlassCard(glass = glass) {
+            GlassCard(glass = glass, alpha = look.alpha, blurPx = look.blur) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -415,7 +425,12 @@ fun MainScreen(
                 }
             }
 
-            GlassCard(glass = glass, onClick = onOpenBackdropConfig) {
+            GlassCard(
+                glass = glass,
+                alpha = look.alpha,
+                blurPx = look.blur,
+                onClick = onOpenBackdropConfig
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -432,6 +447,41 @@ fun MainScreen(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = apiSummary,
+                            fontSize = 12.sp,
+                            color = onCardSecondary
+                        )
+                    }
+                    Text(
+                        text = "›",
+                        fontSize = 22.sp,
+                        color = if (hasBackdrop) CARD_TEXT.copy(alpha = 0.45f) else colors.textSecondary
+                    )
+                }
+            }
+
+            // 玻璃观感：卡片的透明度/模糊半径，调完直接生效并记住
+            GlassCard(
+                glass = glass,
+                alpha = look.alpha,
+                blurPx = look.blur,
+                onClick = { showLookSheet = true }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "玻璃观感",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = onCardPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "不透明度 ${(look.alpha * 100).roundToInt()}% · 模糊 ${look.blur.roundToInt()}",
                             fontSize = 12.sp,
                             color = onCardSecondary
                         )
@@ -509,6 +559,89 @@ fun MainScreen(
             }
         }
     }
+
+    // 玻璃观感：两个滑块，改完立刻生效，同时写进偏好
+    CenterDialog(visible = showLookSheet, onDismiss = { showLookSheet = false }) {
+        BaseDialogSurface(
+            title = "玻璃观感",
+            bottomBar = {
+                DialogButton(
+                    "恢复默认",
+                    {
+                        HomeLook.reset(context)
+                        look = HomeLook.Look()
+                        showLookSheet = false
+                    },
+                    false
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                DialogButton("完成", { showLookSheet = false }, true)
+            }
+        ) {
+            Text(
+                text = "卡片的透明度与模糊半径，改完立刻生效",
+                fontSize = 13.sp,
+                color = colors.textSecondary
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            LookSlider(
+                title = "不透明度",
+                valueText = "${(look.alpha * 100).roundToInt()}%",
+                value = look.alpha,
+                range = HomeLook.MIN_ALPHA..HomeLook.MAX_ALPHA,
+                onChange = {
+                    look = look.copy(alpha = it)
+                    HomeLook.save(context, look)
+                }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            LookSlider(
+                title = "模糊半径",
+                valueText = "${look.blur.roundToInt()}",
+                value = look.blur,
+                range = HomeLook.MIN_BLUR..HomeLook.MAX_BLUR,
+                onChange = {
+                    look = look.copy(blur = it)
+                    HomeLook.save(context, look)
+                }
+            )
+        }
+    }
+}
+
+/** 一行滑块：左边标题、右边当前值，下面跟 Slider。 */
+@Composable
+private fun LookSlider(
+    title: String,
+    valueText: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    onChange: (Float) -> Unit
+) {
+    val colors = HappyTheme.colors
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = colors.textPrimary
+            )
+            Text(
+                text = valueText,
+                fontSize = 13.sp,
+                color = colors.textSecondary
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range
+        )
+    }
 }
 
 /**
@@ -519,6 +652,8 @@ fun MainScreen(
 private fun GlassCard(
     glass: Backdrop?,
     modifier: Modifier = Modifier,
+    alpha: Float = HomeLook.DEFAULT_ALPHA,
+    blurPx: Float = HomeLook.DEFAULT_BLUR,
     shape: Shape = CARD_SHAPE,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
@@ -530,12 +665,12 @@ private fun GlassCard(
             .drawBackdrop(
                 backdrop = glass,
                 shape = { shape },
-                effects = { blur(10f) },
+                effects = { blur(blurPx) },
                 highlight = null,
                 shadow = null
             )
-            .background(Color.White.copy(alpha = 0.70f))
-            .border(1.dp, Color.White.copy(alpha = 0.82f), shape)
+            .background(Color.White.copy(alpha = alpha))
+            .border(1.dp, Color.White.copy(alpha = (alpha + 0.12f).coerceAtMost(0.95f)), shape)
     } else {
         cardModifier
             .shadow(2.dp, shape, clip = false)
@@ -555,11 +690,15 @@ private enum class ChipState { Idle, Loading, Failed, Disabled }
 private fun RefreshChip(
     state: ChipState,
     glass: Backdrop?,
+    alpha: Float = HomeLook.DEFAULT_ALPHA,
+    blurPx: Float = HomeLook.DEFAULT_BLUR,
     onClick: () -> Unit
 ) {
     val colors = HappyTheme.colors
     val shape = RoundedCornerShape(50)
     val enabled = state == ChipState.Idle || state == ChipState.Failed
+    // 胶囊比卡片小，透明度略提一点，免得压不住背后的图
+    val chipAlpha = (alpha + 0.04f).coerceAtMost(HomeLook.MAX_ALPHA)
 
     var chipModifier = Modifier.height(40.dp)
     chipModifier = if (glass != null) {
@@ -567,12 +706,16 @@ private fun RefreshChip(
             .drawBackdrop(
                 backdrop = glass,
                 shape = { shape },
-                effects = { blur(8f) },
+                effects = { blur(blurPx * 0.8f) },
                 highlight = null,
                 shadow = null
             )
-            .background(Color.White.copy(alpha = if (state == ChipState.Disabled) 0.55f else 0.72f))
-            .border(1.dp, Color.White.copy(alpha = 0.84f), shape)
+            .background(
+                Color.White.copy(
+                    alpha = if (state == ChipState.Disabled) (chipAlpha - 0.16f).coerceAtLeast(0.2f) else chipAlpha
+                )
+            )
+            .border(1.dp, Color.White.copy(alpha = (chipAlpha + 0.12f).coerceAtMost(0.95f)), shape)
     } else {
         chipModifier.background(
             if (state == ChipState.Disabled) colors.ripple.copy(alpha = 0.55f) else colors.ripple,
