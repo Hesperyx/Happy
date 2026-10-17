@@ -22,14 +22,13 @@ import cn.hxy.happy.utils.reflect.callOriginal
 
 @HookItemAnnotation(
     "伪装网络状态",
-    "将网络类型伪装为指定的 WIFI / 5G / 4G。",
+    "将网络类型伪装为指定的 WIFI / 5G / 4G，切换后主进程立即生效，其它进程随自身重启生效。",
     HookCategory.DEVICE,
     "All"
 )
 object FakeNetworkStatus : BaseClickableHookItem<FakeNetworkConfig>(FakeNetworkConfig.serializer()) {
 
-    override val isNeedRestart: Boolean = true
-
+    // hook 在 onHook() 里无条件装配、回调里实时读 config，所以切换伪装类型不需要重启 QQ。
     override val defaultConfig: FakeNetworkConfig = FakeNetworkConfig()
 
     @RequiresApi(Build.VERSION_CODES.Q)

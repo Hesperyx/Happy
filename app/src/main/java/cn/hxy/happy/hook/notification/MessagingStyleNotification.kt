@@ -26,8 +26,7 @@ import cn.hxy.happy.utils.reflect.clazz
 object MessagingStyleNotification :
     BaseClickableHookItem<NotificationStyleConfig>(NotificationStyleConfig.serializer()) {
 
-    override val isNeedRestart: Boolean = true
-
+    // hook 与通知渠道在 onHook() 里无条件装配，选项在构建通知时实时读 config，因此不需要重启。
     override val defaultConfig: NotificationStyleConfig = NotificationStyleConfig()
 
     private val notificationCapture = MessagingNotificationCapture(this)
