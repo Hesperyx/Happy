@@ -37,6 +37,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
@@ -79,7 +82,14 @@ fun MainScreen(
     // 接口表一变就重新取图；接口全关时退回纯色底
     LaunchedEffect(refreshKey, backdropConfig) {
         isLoadingBackdrop = true
-        val loaded = BackdropLoader.load(context, backdropConfig.apis, refreshKey > 0)
+        val metrics = context.resources.displayMetrics
+        val loaded = BackdropLoader.load(
+            context = context,
+            apis = backdropConfig.apis,
+            forceRefresh = refreshKey > 0,
+            targetWidth = metrics.widthPixels,
+            targetHeight = metrics.heightPixels
+        )
         if (loaded != null) {
             backdrop = loaded.asImageBitmap()
         } else if (backdropConfig.enabledApis.isEmpty()) {
@@ -123,17 +133,20 @@ fun MainScreen(
                 bitmap = backdrop!!,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                // 默认的双线性在放大时会糊；这里让 GPU 走高质量缩放，并给一点饱和
+                filterQuality = FilterQuality.High,
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.15f) })
             )
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            0.0f to Color.Black.copy(alpha = 0.44f),
-                            0.30f to Color.Black.copy(alpha = 0.08f),
-                            0.72f to Color.Black.copy(alpha = 0.08f),
-                            1.0f to Color.Black.copy(alpha = 0.46f)
+                            0.0f to Color.Black.copy(alpha = 0.38f),
+                            0.26f to Color.Black.copy(alpha = 0.05f),
+                            0.74f to Color.Black.copy(alpha = 0.05f),
+                            1.0f to Color.Black.copy(alpha = 0.42f)
                         )
                     )
             )

@@ -37,12 +37,16 @@ data class BackdropApiConfig(
 
     companion object {
 
-        /** 默认四条，实测均返回 200 + image/webp。 */
+        /**
+         * 默认接口，按「铺满手机屏幕后还清不清晰」排序：越靠前分辨率越大。
+         * 手机屏幕普遍是 1272×2800 这种比例，横图只要本身够大，居中裁一条竖的仍然清晰。
+         */
         val DEFAULT_APIS = listOf(
+            BackdropApi("https://t.alcy.cc/pc", true, "樱道 · 二次元横图（3000px 以上）"),
+            BackdropApi("https://t.alcy.cc/mp", true, "樱道 · 二次元竖图（约 1810×2560）"),
+            BackdropApi("https://picsum.photos/1440/3120", true, "picsum · 真实摄影（固定尺寸）"),
             BackdropApi("https://www.loliapi.com/acg/pe/", true, "loliapi · 二次元竖图"),
-            BackdropApi("https://www.loliapi.com/acg/pc/", true, "loliapi · 二次元横图"),
-            BackdropApi("https://t.alcy.cc/moe", true, "樱道 · 二次元"),
-            BackdropApi("https://t.alcy.cc/pc", true, "樱道 · 风景")
+            BackdropApi("https://www.loliapi.com/acg/pc/", true, "loliapi · 二次元横图（1920×1080）")
         )
 
         fun default(): BackdropApiConfig = BackdropApiConfig(DEFAULT_APIS)

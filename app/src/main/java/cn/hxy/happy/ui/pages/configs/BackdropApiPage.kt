@@ -22,8 +22,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -42,6 +44,7 @@ import cn.hxy.happy.ui.components.atoms.HappySwitch
 import cn.hxy.happy.ui.components.listitems.ActionItem
 import cn.hxy.happy.ui.components.listitems.PreferenceSection
 import cn.hxy.happy.ui.components.scaffold.ConfigPageScaffold
+import cn.hxy.happy.ui.core.theme.AccentOrange
 import cn.hxy.happy.ui.core.theme.AccentRed
 import cn.hxy.happy.ui.core.theme.HappyTheme
 import cn.hxy.happy.ui.pages.home.BackdropLoader
@@ -61,6 +64,7 @@ fun BackdropApiPage(
 ) {
     val colors = HappyTheme.colors
     val scope = rememberCoroutineScope()
+    val metrics = LocalContext.current.resources.displayMetrics
 
     var apis by remember(currentConfig) {
         mutableStateOf(currentConfig.apis.ifEmpty { BackdropApiConfig.DEFAULT_APIS })
@@ -82,19 +86,30 @@ fun BackdropApiPage(
         isProbing = true
         probeFailed = false
         scope.launch {
-            val result = BackdropLoader.probe(target)
+            val result = BackdropLoader.probe(
+                target,
+                metrics.widthPixels,
+                metrics.heightPixels
+            )
             isProbing = false
             result.onSuccess { hit ->
                 probe = hit
                 probeText = buildString {
                     append(hit.api.displayLabel)
                     append(" · ")
-                    append(hit.bitmap.width)
+                    append(hit.sourceWidth)
                     append("×")
-                    append(hit.bitmap.height)
+                    append(hit.sourceHeight)
                     append(" · ")
                     append(hit.bytes / 1024)
-                    append(" KB")
+                    append(" KB · ")
+                    append(
+                        if (hit.cover <= 1.05f) {
+                            "原生像素"
+                        } else {
+                            "要放大 ${(kotlin.math.round(hit.cover * 10f) / 10f)}×"
+                        }
+                    )
                 }
             }.onFailure { error ->
                 probeFailed = true
@@ -125,6 +140,7 @@ fun BackdropApiPage(
                 bitmap = current.bitmap.asImageBitmap(),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                filterQuality = FilterQuality.High,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(156.dp)
@@ -174,12 +190,16 @@ fun BackdropApiPage(
                     if (enabledApis.isEmpty()) {
                         "接口全关时，主页只剩纯色底"
                     } else {
-                        "从 ${enabledApis.size} 个启用接口里随机挑一个"
+                        "屏幕 ${metrics.widthPixels}×${metrics.heightPixels}：图比它大才不糊"
                     }
                 },
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
-                color = if (probeFailed) AccentRed else colors.textSecondary,
+                color = when {
+                    probeFailed -> AccentRed
+                    (probe?.cover ?: 0f) > 1.15f -> AccentOrange
+                    else -> colors.textSecondary
+                },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -289,7 +309,7 @@ fun BackdropApiPage(
             if (!BackdropApiConfig(apis).isSameAsDefault()) {
                 ActionItem(
                     title = "恢复默认接口",
-                    description = "换回内置的四条（loliapi、樱道）",
+                    description = "换回内置的五条（樱道、picsum、loliapi）",
                     onClick = {
                         apis = BackdropApiConfig.DEFAULT_APIS
                         expandedIndex = -1
