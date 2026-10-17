@@ -1,5 +1,6 @@
 package cn.hxy.happy.ui.pages.home
 
+import android.app.Activity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -40,12 +42,14 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import cn.hxy.happy.R
 import cn.hxy.happy.ui.components.atoms.HappyCard
 import cn.hxy.happy.ui.core.theme.AccentGreen
@@ -77,6 +81,16 @@ fun MainScreen(
     }
 
     val hasBackdrop = backdrop != null
+
+    // 有背景图时状态栏落在暗色遮罩上，图标转白；无图时白底配深色图标
+    val view = LocalView.current
+    val activity = LocalContext.current as? Activity
+    SideEffect {
+        val window = activity?.window ?: return@SideEffect
+        if (view.isInEditMode) return@SideEffect
+        WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !hasBackdrop
+    }
+
     val textColor = if (hasBackdrop) Color.White else colors.textPrimary
     val subTextColor = if (hasBackdrop) Color.White.copy(alpha = 0.86f) else colors.textSecondary
     val textShadow = if (hasBackdrop) {
