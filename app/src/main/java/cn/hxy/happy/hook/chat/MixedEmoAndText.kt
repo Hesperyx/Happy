@@ -3,6 +3,8 @@ package cn.hxy.happy.hook.chat
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.text.Spannable
 import android.text.SpannableStringBuilder
@@ -17,7 +19,7 @@ import cn.hxy.happy.annotation.HookItemAnnotation
 import cn.hxy.happy.hook.api.SendMsgListener
 import cn.hxy.happy.hook.base.BaseSwitchHookItem
 import cn.hxy.happy.utils.dexkit.DexKitTask
-import cn.hxy.happy.utils.hook.hookReplace
+import cn.hxy.happy.utils.hook.hookAfter
 import cn.hxy.happy.utils.log.LogUtils
 import cn.hxy.happy.utils.qq.HostInfo
 import cn.hxy.happy.utils.qq.QQCurrentEnv
@@ -72,6 +74,12 @@ object MixedEmoAndText : BaseSwitchHookItem(), SendMsgListener, DexKitTask {
 
     /** 最近一次吞掉发送的时刻，用来判断宿主紧跟其后的「清空回复」是不是我们造成的 */
     private var lastHijackAt = 0L
+
+    /** 派发过回复 UI 状态的 mediator 实例，事后重建引用条时要用同一个 */
+    private var mediatorInstance: Any? = null
+
+    /** 最近一次 SetReplyUIState，宿主清空后用它把引用条原样补回去 */
+    private var lastSetReplyState: Any? = null
 
     private val logTime = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
 
@@ -140,6 +148,7 @@ object MixedEmoAndText : BaseSwitchHookItem(), SendMsgListener, DexKitTask {
         lastHijackAt = SystemClock.elapsedRealtime()
         logSkip("intercepted", elements)
         elements.clear()
+        scheduleReplyBarRestore()
     }
 
     /** 记住这次发送带上的回复引用，供后续真正发送时补回 */
@@ -210,39 +219,45 @@ object MixedEmoAndText : BaseSwitchHookItem(), SendMsgListener, DexKitTask {
     }
 
     override fun onHook() {
-        // 这里必须用 replace：宿主在我们吞掉发送后会紧跟着派发一次 ClearReplyUIState，
-        // 必须在它到达 UI 之前拦下来，否则引用条会先消失，事后重派也来不及（用户已看到闪烁）。
-        handleUIState.hookReplace(this) { chain ->
-            val state = chain.args.firstOrNull()
+        // 宿主在点「发送」时先清回复状态、再调 sendMsg，所以引用条在我们拦截之前就已经被清掉了。
+        // 这里不能拦（那个清空也用于用户主动取消回复），只能记下 SetReplyUIState，
+        // 等拦截成功后延迟一小会儿把引用条重新派发回去。
+        handleUIState.hookAfter(this) { param ->
+            val state = param.args.firstOrNull()
+            mediatorInstance = param.thisObject
             when (state) {
                 is InputReplyUIState.SetReplyUIState -> {
                     isReplying = true
-                    chain.proceed()
+                    lastSetReplyState = state
                 }
 
                 is InputReplyUIState.ClearReplyUIState -> {
-                    val hijackedRecently =
-                        SystemClock.elapsedRealtime() - lastHijackAt < REPLY_CLEAR_GRACE_MS
+                    isReplying = false
                     LogUtils.d(
                         "MixedEmoAndText: [${stamp()}] ui-clear-reply " +
-                                "hijackedRecently=$hijackedRecently pending=${pendingReply != null}"
+                                "hijackedRecently=${SystemClock.elapsedRealtime() - lastHijackAt < REPLY_CLEAR_GRACE_MS} " +
+                                "pending=${pendingReply != null}"
                     )
-                    if (hijackedRecently && pendingReply != null) {
-                        // 这条清空是宿主吞掉发送后自己补的，用户并没有取消回复：
-                        // 直接不派发，引用条原地保留。
-                        LogUtils.d("MixedEmoAndText: [${stamp()}] ui-clear-reply-skipped")
-                        null
-                    } else {
-                        // 用户主动取消回复，或真的发送完成：暂存的引用作废
-                        isReplying = false
-                        pendingReply = null
-                        chain.proceed()
-                    }
                 }
-
-                else -> chain.proceed()
             }
         }
+    }
+
+    /** 拦截成功后把刚才被宿主清掉的引用条重新派发回去 */
+    private fun scheduleReplyBarRestore() {
+        val state = lastSetReplyState ?: return
+        val mediator = mediatorInstance ?: return
+        Handler(Looper.getMainLooper()).postDelayed({
+            // 宿主自己发走了、或者用户已经把输入框清空，就不该再冒出引用条
+            if (pendingReply == null && spansInBox() == 0) return@postDelayed
+            runCatching { handleUIState.invoke(mediator, state) }
+                .onSuccess {
+                    LogUtils.d("MixedEmoAndText: [${stamp()}] reply-bar-restored")
+                }
+                .onFailure {
+                    LogUtils.d("MixedEmoAndText: [${stamp()}] reply-bar-restore-failed ${it.message}")
+                }
+        }, 150)
     }
 
     private fun insertImage(localPath: String): Boolean {
