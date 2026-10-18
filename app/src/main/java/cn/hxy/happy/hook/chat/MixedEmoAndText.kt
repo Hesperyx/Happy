@@ -3,6 +3,7 @@ package cn.hxy.happy.hook.chat
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.net.Uri
+import android.os.SystemClock
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.view.View
@@ -39,18 +40,42 @@ object MixedEmoAndText : BaseSwitchHookItem(), SendMsgListener, DexKitTask {
     /** 输入框 EditText 的资源 id，按优先级尝试，宿主版本不同可能换名 */
     private val inputIds = arrayOf("input", "input_et", "aio_input", "inputEdit", "et_input")
 
+    /** 回复引用最多替用户保留这么久，超时就当作草稿已放弃 */
+    private const val PENDING_REPLY_TTL_MS = 3 * 60 * 1000L
+
+    /** 暂存图片的识别窗口，超过就不再把同路径的图片当成「刚插入的那张」 */
+    private const val INSERTED_PIC_TTL_MS = 5 * 60 * 1000L
+
     private lateinit var createImageSpan: Method
 
     private lateinit var handleUIState: Method
 
     private var isReplying = false
 
+    /**
+     * 被暂存吞掉的那次发送里的回复引用。
+     * 宿主在点发送时就把回复状态清掉了，所以表情被暂存后输入框的引用条会消失；
+     * 这里把宿主当时构造好的回复元素留住，等用户真正点发送时再补回发送列表。
+     */
+    private var pendingReply: MsgElement? = null
+
+    private var pendingReplyAt = 0L
+
+    /** 已经插进输入框的图片路径 → 插入时刻，用来认出「这张图本来就是暂存进去的」 */
+    private val insertedPics = HashMap<String, Long>()
+
     override fun onSend(elements: ArrayList<MsgElement>) {
         // 只有「本次发送仅由一张图片构成」时才需要暂存进输入框；
         // 回复引用等附属元素可以和图片共存，不能因为它们就放弃拦截。
         val pic = resolveSolePicture(elements)
         if (pic == null) {
-            logSkip("no-sole-picture", elements)
+            // 正常发送（纯文字 / 图文混排）：如果上一次暂存吞掉了回复，这里补回去
+            restorePendingReply(elements)
+            return
+        }
+        if (isInsertedPic(pic)) {
+            // 这张图就是之前暂存进输入框的那张，用户现在点发送了，交还宿主正常发出
+            restorePendingReply(elements)
             return
         }
         if (!isReplying && getInputEdit()?.text.isNullOrEmpty()) {
@@ -67,7 +92,48 @@ object MixedEmoAndText : BaseSwitchHookItem(), SendMsgListener, DexKitTask {
             logSkip("insert-span-failed", elements)
             return
         }
+        rememberInsertedPic(path)
+        captureReply(elements)
         elements.clear()
+    }
+
+    /** 记住这次发送带上的回复引用，供后续真正发送时补回 */
+    private fun captureReply(elements: ArrayList<MsgElement>) {
+        val reply = elements.firstOrNull { it.replyElement != null } ?: return
+        pendingReply = reply
+        pendingReplyAt = SystemClock.elapsedRealtime()
+        LogUtils.d("MixedEmoAndText: capture-reply msgId=${reply.replyElement?.replayMsgId}")
+    }
+
+    /**
+     * 把被暂存吞掉的回复引用补回本次发送。
+     * 宿主自己带了回复（引用条还在）时不重复添加；超过时限也丢弃，避免挂到无关消息上。
+     */
+    private fun restorePendingReply(elements: ArrayList<MsgElement>) {
+        insertedPics.clear()
+        val reply = pendingReply ?: return
+        pendingReply = null
+        if (elements.isEmpty()) return
+        if (elements.any { it.replyElement != null }) return
+        if (elements.none { it.textElement != null || it.picElement != null }) return
+        if (SystemClock.elapsedRealtime() - pendingReplyAt > PENDING_REPLY_TTL_MS) {
+            LogUtils.d("MixedEmoAndText: drop-stale-reply")
+            return
+        }
+        elements.add(0, reply)
+        LogUtils.d("MixedEmoAndText: restore-reply msgId=${reply.replyElement?.replayMsgId}")
+    }
+
+    private fun rememberInsertedPic(path: String) {
+        val now = SystemClock.elapsedRealtime()
+        insertedPics.entries.removeAll { now - it.value > INSERTED_PIC_TTL_MS }
+        insertedPics[path] = now
+    }
+
+    private fun isInsertedPic(pic: MsgElement): Boolean {
+        val path = pic.picElement?.sourcePath ?: return false
+        val at = insertedPics[path] ?: return false
+        return SystemClock.elapsedRealtime() - at <= INSERTED_PIC_TTL_MS
     }
 
     /**
