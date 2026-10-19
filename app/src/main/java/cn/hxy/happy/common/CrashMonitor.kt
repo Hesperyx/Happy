@@ -7,6 +7,8 @@ import cn.hxy.happy.loader.hookapi.HookEngineManager
 import cn.hxy.happy.utils.hook.hookBefore
 import cn.hxy.happy.utils.log.CrashReporter
 import cn.hxy.happy.utils.qq.HostInfo
+import cn.hxy.happy.utils.qq.QQCurrentEnv
+import java.io.File
 import kotlin.system.exitProcess
 
 object CrashMonitor {
@@ -31,6 +33,13 @@ object CrashMonitor {
             val currentHandler = Thread.getDefaultUncaughtExceptionHandler()
             if (currentHandler !is CrashHandler) {
                 Thread.setDefaultUncaughtExceptionHandler(CrashHandler(currentHandler))
+            }
+
+            // 启动时顺手清理历史崩溃报告：之前崩溃循环攒了 2.6GB 在这
+            ModuleScope.launchIO("PruneCrashDir") {
+                runCatching {
+                    CrashReporter.prune(File(QQCurrentEnv.currentDir, "crash"))
+                }
             }
         } catch (t: Throwable) {
             HookEngineManager.engine.log(Log.ERROR, "[Happy]", "CrashMonitor init failed: ", t)

@@ -11,9 +11,10 @@ object HookCategory {
     const val FILE = "文件"
     const val SOCIAL = "社交"
     const val RED_PACKET = "红包"
+    const val DEBUG = "调试"
     const val OTHER = "其他"
 
     val ORDER = listOf(
-        CHAT, MSG, GROUP, SOCIAL, RED_PACKET, PURIFY, DEVICE, BEAUTY, NOTIFICATION, FILE, OTHER
+        CHAT, MSG, GROUP, SOCIAL, RED_PACKET, PURIFY, DEVICE, BEAUTY, NOTIFICATION, FILE, DEBUG, OTHER
     )
 }

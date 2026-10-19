@@ -31,7 +31,24 @@ object PrecisionScheduler {
     private const val PRE_WAKE_SECONDS = 120
 
     private val context: Context get() = HostInfo.hostContext
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * 协程作用域不能在 <clinit> 里创建。
+     *
+     * 真机日志里有 1400+ 条 `ExceptionInInitializerError: PrecisionScheduler.<clinit>`，
+     * cause 是 `ClassLoader.loadClass returned null for kotlinx.coroutines.CoroutineScopeKt`：
+     * 模块在 Application.onCreate 早期初始化时，类加载器偶尔还没就绪，静态初始化一旦失败，
+     * 这个类在本进程内就永久不可用了（异常初始化错误会缓存），顺带让「自动续火 / 自动打卡」全挂。
+     * 改成用到时再建，失败就下一次重试。
+     */
+    private var scope: CoroutineScope? = null
+
+    private fun coroutineScope(): CoroutineScope? {
+        scope?.let { return it }
+        return runCatching { CoroutineScope(Dispatchers.IO + SupervisorJob()) }
+            .getOrNull()
+            ?.also { scope = it }
+    }
 
     private val taskQueue = PriorityBlockingQueue<ScheduledTask>()
 
@@ -123,7 +140,16 @@ object PrecisionScheduler {
         val wakeLock = pm.newWakeLock(PowerManager.FULL_WAKE_LOCK, WAKELOCK_TAG)
         wakeLock.acquire(10 * 60 * 1000L)
 
-        processingJob = scope.launch {
+        val coroutineScope = coroutineScope()
+        if (coroutineScope == null) {
+            // 协程类还没加载出来（早期初始化偶发）：释放标志，等下次闹钟再试，
+            // 不再像原来那样让整个类初始化失败、功能永久失效
+            isProcessing.set(false)
+            if (wakeLock.isHeld) wakeLock.release()
+            return
+        }
+
+        processingJob = coroutineScope.launch {
             try {
 
                 while (isActive) {

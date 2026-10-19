@@ -46,6 +46,7 @@ import top.artmoe.inao.entries.MsgPushOuterClass
 import top.artmoe.inao.entries.QQMessageOuterClass
 import java.util.WeakHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
 @HookItemAnnotation(
     "防撤回",
@@ -57,7 +58,15 @@ object AntiRevoke : BaseClickableHookItem<RevokeConfig>(RevokeConfig.serializer(
 
     override val defaultConfig: RevokeConfig = RevokeConfig()
 
-    private var retractMessageMap = ConcurrentHashMap<String, MutableList<String>>()
+    /**
+     * 撤回记录表。
+     *
+     * 值必须是线程安全的集合：记录写在 MsfPush 线程（[recordRevoke]），读却在主线程
+     * （[typeOf] / [isRevoked] 遍历）。之前值是普通 ArrayList，被并发修改时主线程会抛
+     * ConcurrentModificationException —— 那是主线程未捕获异常，直接让 QQ 崩溃重启，
+     * 于是每崩一次就生成一个崩溃报告，手机里攒了 2800 多个、2.6GB。改用 CopyOnWriteArrayList。
+     */
+    private var retractMessageMap = ConcurrentHashMap<String, CopyOnWriteArrayList<String>>()
     private const val STORE_KEY = "RetractMessageMap"
 
     private const val VIEW_TAG = "RevokeTagView"
@@ -88,7 +97,7 @@ object AntiRevoke : BaseClickableHookItem<RevokeConfig>(RevokeConfig.serializer(
     private fun loadRetractMap() {
         ObjectStore.load("data", STORE_KEY, mapSerializer)?.let { loaded ->
             loaded.forEach { (k, v) ->
-                retractMessageMap[k] = v.toMutableList()
+                retractMessageMap[k] = CopyOnWriteArrayList(v)
             }
         }
     }
@@ -374,7 +383,13 @@ object AntiRevoke : BaseClickableHookItem<RevokeConfig>(RevokeConfig.serializer(
     }
 
     private fun handleInfoSyncPush(protoBuf: ByteArray, param: HookParam) {
-        val infoSyncPush = InfoSyncPushOuterClass.InfoSyncPush.parseFrom(protoBuf)
+        // 同一 cmd 下也可能混入别的业务包，本地 proto 解析失败是正常情况：直接跳过。
+        // 这里一旦走 LogUtils.e，每个失败包都会往 error_log.txt 堆一段栈（实测刷到 14MB）
+        val infoSyncPush = runCatching { InfoSyncPushOuterClass.InfoSyncPush.parseFrom(protoBuf) }
+            .getOrElse { t ->
+                LogUtils.d("AntiRevoke: infoSyncPush 解析失败 ${t.javaClass.simpleName}")
+                return
+            }
         if (!infoSyncPush.hasSyncRecallContent()) return
 
         val syncRecallContent = infoSyncPush.syncRecallContent
@@ -432,7 +447,12 @@ object AntiRevoke : BaseClickableHookItem<RevokeConfig>(RevokeConfig.serializer(
     }
 
     private fun handleMsgPush(protoBuf: ByteArray, param: HookParam) {
-        val msgPush = MsgPushOuterClass.MsgPush.parseFrom(protoBuf)
+        // 见 handleInfoSyncPush：解析失败是常态，静默跳过，不进 error 日志
+        val msgPush = runCatching { MsgPushOuterClass.MsgPush.parseFrom(protoBuf) }
+            .getOrElse { t ->
+                LogUtils.d("AntiRevoke: msgPush 解析失败 ${t.javaClass.simpleName}")
+                return
+            }
         val qqMessage = msgPush.qqMessage
         val content = qqMessage.messageContentInfo
 
@@ -647,11 +667,14 @@ object AntiRevoke : BaseClickableHookItem<RevokeConfig>(RevokeConfig.serializer(
     /** 记录格式与文档 §4.1 一致：同一 seq 落两条，`id` 与 `id|type` */
     private fun recordRevoke(peerId: String, seq: Int, type: Int) {
         val seqStr = seq.toString()
-        val list = retractMessageMap.computeIfAbsent(peerId) { ArrayList() }
-        if (!list.contains(seqStr)) list.add(seqStr)
-        val typed = "$seqStr|$type"
-        list.removeAll { it.startsWith("$seqStr|") && it != typed }
-        if (!list.contains(typed)) list.add(typed)
+        val list = retractMessageMap.computeIfAbsent(peerId) { CopyOnWriteArrayList() }
+        // add/removeAll 在 CopyOnWriteArrayList 上各自线程安全，但这一组操作要连续，加锁避免交错
+        synchronized(list) {
+            if (!list.contains(seqStr)) list.add(seqStr)
+            val typed = "$seqStr|$type"
+            list.removeAll { it.startsWith("$seqStr|") && it != typed }
+            if (!list.contains(typed)) list.add(typed)
+        }
         saveRetractMap()
     }
 
